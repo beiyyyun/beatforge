@@ -7,7 +7,7 @@
  * 比较方法：去掉所有换行与空白后逐字比对。electron 的 LICENSE 是
  * 单一MIT（未混入 ISC），可直接作为权威参照。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 // MIT 官方的规范化形式（choosealicense.com / SPDX 的标准写法）
 const OFFICIAL = [
@@ -35,15 +35,31 @@ function norm(s) {
 }
 
 const my = readFileSync('LICENSE', 'utf8');
-const electron = readFileSync('node_modules/electron/LICENSE', 'utf8');
 
 const myLines = my.split('\n');
 // 结构：0=许可名称, 1=空行, 2=Copyright 行, 3=空行, 4+=正文
 const copyLine = myLines[0];
 const copyLineText = myLines[2];
 const myBody = norm(myLines.slice(4).join('\n'));
-const refBody = norm(electron.split('\n').filter((l) => !l.startsWith('Copyright')).join('\n'));
 const official = norm(OFFICIAL);
+
+// 第二参照：electron 的 MIT 正文。
+//
+// 不能硬依赖它存在 —— 早先版本直接 readFileSync('node_modules/electron/LICENSE')，
+// 在刚clone 完、还没 npm install 的目录里直接 ENOENT 崩掉。
+// 一个校验脚本在"依赖尚未安装"时挂掉，等于在最需要它的时刻不可用
+// （clone 后第一件事往往就是先看授权）。
+// 所以改为：文件在就比对，不在就跳过并说明，不假装通过也不硬崩。
+const refPath = 'node_modules/electron/LICENSE';
+let refBody = null;
+let refNote = '';
+if (existsSync(refPath)) {
+  const electron = readFileSync(refPath, 'utf8');
+  refBody = norm(electron.split('\n').filter((l) => !l.startsWith('Copyright')).join('\n'));
+  refNote = '（对照 node_modules/electron/LICENSE）';
+} else {
+  refNote = '（未安装依赖，跳过对照；内嵌的官方原文比对仍然有效）';
+}
 
 let fail = 0;
 const ok = (c, label, detail = '') => {
@@ -52,8 +68,12 @@ const ok = (c, label, detail = '') => {
 };
 
 console.log('=== MIT 正文逐字核验 ===\n');
-console.log('--- 与 electron/LICENSE 正文比对（去空白后）---');
-ok(myBody === refBody, '我的正文与 electron 官方 MIT 正文完全一致');
+console.log('--- 交叉参照 ---');
+if (refBody === null) {
+  console.log('  ! 跳过：' + refNote);
+} else {
+  ok(myBody === refBody, '与 electron 官方 MIT 正文一致', refNote);
+}
 
 console.log('\n--- 与 choosealicense 标准写法比对 ---');
 ok(myBody === official, '我的正文与 MIT 标准写法完全一致');
