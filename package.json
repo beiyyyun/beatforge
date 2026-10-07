@@ -1,0 +1,59 @@
+{
+  "name": "beatforge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "浏览器里的音乐工作站 —— 通道机架、步进序列器、钢琴卷帘、编曲助手、录音识别。7 种合成引擎 / 36 个音色预设（含十大民乐），实时合成，零采样文件",
+  "author": "BeatForge",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "pack:win": "npm run build && node manual-pack.mjs",
+    "verify:package": "node tests/verify-package.mjs",
+    "verify:paths": "node tests/check-relative-paths.mjs",
+    "verify": "npm run verify:paths && npm run verify:package",
+    "package": "echo \"本机 electron-builder 会在 rename win-unpacked 时EPERM 失败（Windows Defender 占用句柄）。请改用 npm run pack:win\" && exit 1",
+    "package:dir": "npm run pack:win"
+  },
+  "devDependencies": {
+    "electron": "^44.6.0",
+    "electron-builder": "^26.15.3",
+    "playwright": "^1.63.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  },
+  "build": {
+    "appId": "com.beatforge.app",
+    "productName": "BeatForge",
+    "directories": {
+      "output": "release-v2",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BeatForge"
+    }
+  }
+}

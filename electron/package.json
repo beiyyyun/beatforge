@@ -1,0 +1,8 @@
+{
+  "name": "beatforge-electron",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "main.cjs",
+  "description": "把 Electron 主进程的作用域从根 package.json 的 type:module 隔离出来。根包是 ESM（vite 要求），Electron 主进程需要 CommonJS，两者在同一个 package.json 里无法共存。"
+}
