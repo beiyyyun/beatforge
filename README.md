@@ -11,6 +11,31 @@
 均不需要修改 —— 这条约束由 `tests/registry-check.mjs` 自动校验，
 一旦有人在调用方写回 `instrument === 'xxx'` 硬判断就会失败。
 
+## 许可证
+
+[MIT](LICENSE) © 2026 beiyyun
+
+可以自由使用、复制、修改、合并、发布、分发、再许可、出售，
+也可以闭源商用，只需保留版权声明与许可声明。
+
+## 从源码运行
+
+需要 **Node.js 22.12 或更高**（Electron 44 的硬性要求；Vite 8 另支持 20.19+，
+但 Electron 那条更严格，取交集即为 22.12+）。
+
+```bash
+git clone https://github.com/beiyyyun/beatforge.git
+cd beatforge
+npm install
+npm run dev          # 浏览器打开开发服务器
+```
+
+打 Windows 可执行文件（见下文"重新打包 exe"）：
+
+```bash
+npm run pack:win     # 产出 BeatForge-win/BeatForge.exe
+```
+
 ## 三种运行方式
 
 ### 1. Windows 可执行文件（推荐）

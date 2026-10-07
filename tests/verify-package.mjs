@@ -247,6 +247,33 @@ const mainSrc = readFileSync(join(ROOT, 'electron', 'main.cjs'), 'utf8');
 ok(/BEATFORGE_SOFTWARE_RENDER\s*===\s*'1'/.test(mainSrc),
   '主进程确实读取 BEATFORGE_SOFTWARE_RENDER');
 
+// ---------- 开源合规检查 ----------
+// package.json 声明的license 必须与LICENSE 文件的实际内容一致。
+//
+// 为什么要查：package.json 的 license 字段被npm、GitHub、依赖扫描工具
+// 当作事实来源。若它写着 MIT 而文件里其实是 ISC，或者反过来，
+// 使用者按错误的条款行事 —— 这是法律层面的错配，编译器和运行时都查不出。
+console.log('\n--- [附加] 开源合规---');
+const pkgJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const licensePath = join(ROOT, 'LICENSE');
+ok(existsSync(licensePath), 'LICENSE 文件存在');
+if (existsSync(licensePath)) {
+  const licenseText = readFileSync(licensePath, 'utf8');
+  ok(pkgJson.license === 'MIT', 'package.json 声明 MIT', '实际: ' + pkgJson.license);
+  ok(/^MIT License/.test(licenseText), 'LICENSE 首行为 MIT License');
+  ok(/WITHOUT WARRANTY OF ANY KIND/.test(licenseText), 'LICENSE 含免责声明段');
+  ok(pkgJson.private === false, 'private 为 false（允许发布）', '实际: ' + pkgJson.private);
+  // 版权署名必须与仓库作者一致，否则授权归属不明
+  const copy = licenseText.match(/^Copyright \(c\).*$/m);
+  const author = String(pkgJson.author || '');
+  ok(!!copy && copy[0].includes(author),
+    'LICENSE 版权署名与 package.json author 一致',
+    `${copy ? copy[0] : '(未找到)'} vs author=${author}`);
+}
+ok(!!pkgJson.repository?.url, 'package.json 声明仓库地址', pkgJson.repository?.url || '(缺失)');
+ok(!!pkgJson.engines?.node, 'package.json 声明 Node 版本要求',
+  pkgJson.engines?.node || '(缺失)');
+
 console.log('');
 console.log('=== 汇总 ===');
 if (hardFail > 0) {
