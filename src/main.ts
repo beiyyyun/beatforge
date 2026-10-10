@@ -745,7 +745,7 @@ function addPresetTrack(presetId: string) {
     const track = makeTrack(presetId);
     d.tracks.push(track);
     if (track.kind === 'drum') {
-      d.steps[track.id] = makeStepRow(d.totalSteps, undefined, 4);
+      d.steps[track.id] = makeStepRow(d.totalSteps);
     }
   });
   const newId = store.current.tracks[store.current.tracks.length - 1];
@@ -1122,7 +1122,8 @@ function bindKeyboard() {
     const noteKey = ui.keyboardNotes.get(key);
     if (noteKey !== undefined) {
       const track = store.current.tracks.find((t) => t.id === ui.selectedTrackId);
-      if (track) engine.previewNoteOff(track);
+      // 传入具体 key：弹和弦时只松开当前键，其他键继续发声。
+      if (track) engine.previewNoteOff(track, noteKey);
       ui.keyboardNotes.delete(key);
       ui.playingKeys.delete(noteKey);
       editor.setPlayingKeys(ui.playingKeys);

@@ -232,13 +232,17 @@ export function buildInsert(
   cursor = toneFilter;
 
   // --- 干湿混合 ---
+  // dry 必须是原始信号（input，未经 EQ/失真），wet 是处理后信号（cursor）。
+  // 早先两条都接 cursor，输出 = cursor × mix + cursor × (1-mix) = cursor，
+  // mix 参数完全无效 —— 效果器的干湿比是坏的。
   const dry = ctx.createGain();
   const wet = ctx.createGain();
   const mix = Math.max(0, Math.min(1, params.mix));
-  dry.gain.value = mix;
-  wet.gain.value = 1 - mix;
+  // mix 语义：1 = 全处理（湿），0 = 全原始（干）
+  dry.gain.value = 1 - mix;
+  wet.gain.value = mix;
 
-  cursor.connect(dry);
+  input.connect(dry);
   cursor.connect(wet);
   dry.connect(output);
   wet.connect(output);

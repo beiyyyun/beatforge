@@ -21,12 +21,26 @@ export class Mixer {
   private masterFill: HTMLElement | null = null;
   private masterValue: HTMLElement | null = null;
   private trackFills = new Map<string, HTMLElement>();
+  /**
+   * 监听器生命周期控制器。renderStrip/renderMaster 往 window 挂监听器，
+   * 每次 render 都挂新的、从不移除 —— 监听器随渲染次数线性累积。
+   * 用 AbortController 一次性撤销旧监听器，再挂新的。
+   */
+  private listenerCtl: AbortController | null = null;
+  private sig: AddEventListenerOptions | undefined;
 
   constructor(private cb: MixerCallbacks) {
     this.root = el('div', { class: 'mixer' });
   }
 
   render(project: Project) {
+    // 先撤销旧监听器，再挂新的 —— 不撤销的话 window 上的
+    // pointermove/pointerup 监听器会随渲染次数线性累积。
+    this.listenerCtl?.abort();
+    const ctl = new AbortController();
+    this.listenerCtl = ctl;
+    this.sig = { signal: ctl.signal };
+
     this.trackFills.clear();
     const frag = document.createDocumentFragment();
 
@@ -103,7 +117,7 @@ export class Mixer {
       dragging = true;
     });
     trackEl.addEventListener('pointermove', (e) => { if (dragging) applyFromEvent(e.clientY); });
-    window.addEventListener('pointerup', () => { dragging = false; });
+    window.addEventListener('pointerup', () => { dragging = false; }, this.sig);
 
     const value = el('div', { class: 'strip-value' }, String(Math.round(track.volume * 100)));
 
@@ -174,8 +188,8 @@ export class Mixer {
       dragging = true;
       this.cb.onBeginEdit();
     });
-    window.addEventListener('pointermove', (e) => { if (dragging) apply(e.clientY); });
-    window.addEventListener('pointerup', () => { dragging = false; });
+    window.addEventListener('pointermove', (e) => { if (dragging) apply(e.clientY); }, this.sig);
+    window.addEventListener('pointerup', () => { dragging = false; }, this.sig);
 
     trackEl.addEventListener('pointerdown', (e) => {
       if (e.target !== cap) { this.cb.onBeginEdit(); apply(e.clientY); dragging = true; }

@@ -11,7 +11,7 @@ import type {
   Project, Note, Track, TrackLayer,
 } from '../core/types';
 import { createInstrument, withDefaults, getInstrumentDef } from './registry';
-import type { InstrumentEngine } from './registry';
+import type { InstrumentEngine, AnyParams } from './registry';
 // 副作用导入：注册所有内置乐器。放到这里而不是让每个调用方记得导入，
 // 是因为漏导入的表现是"轨道完全没声音"，排查成本远高于导入成本。
 import './register';
@@ -285,20 +285,28 @@ export class PlaybackEngine {
     if (this.ctx) {
       const now = this.ctx.currentTime;
       for (const ch of this.channels.values()) {
-        // panic 而非 releaseAll：拨弦的 releaseAll 刻意保留自然余音，
-        // 但用户点了"停止"，期望的是立刻安静。
-        if (ch.synth?.panic) ch.synth.panic();
-        else ch.synth?.releaseAll(now, ch.track.params);
+        this.silence(ch.synth, now, ch.track.params);
         for (const l of ch.layers) {
           const def = (ch.track.layers ?? []).find((x) => x.id === l.layerId);
-          const params = def?.params ?? ch.track.params;
-          if (l.synth?.panic) l.synth.panic();
-          else l.synth?.releaseAll(now, params);
+          this.silence(l.synth, now, def?.params ?? ch.track.params);
         }
         ch.heldNotes = [];
       }
     }
     this.onStop?.();
+  }
+
+  /**
+   * 立即掐断一个引擎的全部发声。
+   *
+   * 优先用 panic 而非 releaseAll：拨弦/击弦的 releaseAll 刻意保留自然余音
+   * （正常演奏不该切断余音），但用户点了"停止"，期望的是立刻安静。
+   * 持续音类引擎两者等价，不实现 panic 时退回 releaseAll。
+   */
+  private silence(synth: InstrumentEngine | null, time: number, params: AnyParams) {
+    if (!synth) return;
+    if (synth.panic) synth.panic();
+    else synth.releaseAll(time, params);
   }
 
   /** 核心：前瞻式调度循环 */
@@ -422,7 +430,10 @@ export class PlaybackEngine {
     const ch = this.channels.get(track.id);
     if (!ch || !ch.synth) return;
     const time = this.ctx.currentTime + 0.005;
-    const previewId = `preview:${track.id}`;
+    // previewId 必须含 key：同时按多个键时，每个键的预览音符是独立声部。
+    // 不含 key 的话 Bow/Wind 引擎用 Map 存同 id 覆盖（第二个键顶掉第一个），
+    // Poly 按 id 释放只命中一个 —— 和弦弹奏音符互相干扰。
+    const previewId = `preview:${track.id}:${key}`;
     const params = withDefaults(getInstrumentDef(track.instrument), track.params);
     ch.synth.noteOn(key, time, velocity, params, previewId);
     // 试听时也要听到叠加层，否则用户判断不了叠加效果
@@ -431,31 +442,46 @@ export class PlaybackEngine {
       if (!def || def.muted || !l.synth) continue;
       const lk = key + def.semitone + def.octave * 12;
       if (lk < 0 || lk > 127) continue;
-      const lid = `preview:${l.layerId}`;
+      const lid = `preview:${l.layerId}:${key}`;
       const lParams = withDefaults(getInstrumentDef(def.instrument), def.params);
       l.synth.noteOn(lk, time, velocity * layerGain(def), lParams, lid);
     }
     this.previewKey.set(track.id, key);
+    let keys = this.previewKeys.get(track.id);
+    if (!keys) { keys = new Set(); this.previewKeys.set(track.id, keys); }
+    keys.add(key);
   }
 
-  previewNoteOff(track: Track) {
+  previewNoteOff(track: Track, key?: number) {
     if (!this.ctx) return;
     const ch = this.channels.get(track.id);
     if (!ch || !ch.synth) return;
     const time = this.ctx.currentTime;
-    if (ch.synth.noteOff) ch.synth.noteOff(`preview:${track.id}`, time);
-    else ch.synth.releaseAll(time, withDefaults(getInstrumentDef(track.instrument), track.params));
-    for (const l of ch.layers) {
-      const def = (track.layers ?? []).find((x) => x.id === l.layerId);
-      if (!def || !l.synth) continue;
-      if (l.synth.noteOff) l.synth.noteOff(`preview:${l.layerId}`, time);
-      else l.synth.releaseAll(time, withDefaults(getInstrumentDef(def.instrument), def.params));
+    // key 不传时释放该轨道所有预览音符（兼容旧调用），
+    // 传入时只释放对应的那一个 —— 弹和弦时互不干扰。
+    const keys = key !== undefined ? [key] : [...(this.previewKeys.get(track.id) ?? [])];
+    for (const k of keys) {
+      const pid = `preview:${track.id}:${k}`;
+      if (ch.synth.noteOff) ch.synth.noteOff(pid, time);
+      else ch.synth.releaseAll(time, withDefaults(getInstrumentDef(track.instrument), track.params));
+      for (const l of ch.layers) {
+        const def = (track.layers ?? []).find((x) => x.id === l.layerId);
+        if (!def || !l.synth) continue;
+        const lid = `preview:${l.layerId}:${k}`;
+        if (l.synth.noteOff) l.synth.noteOff(lid, time);
+        else l.synth.releaseAll(time, withDefaults(getInstrumentDef(def.instrument), def.params));
+      }
     }
-    this.previewKey.delete(track.id);
+    if (key !== undefined) this.previewKeys.get(track.id)?.delete(key);
+    else this.previewKeys.delete(track.id);
+    // 兼容旧字段：getPreviewKey 仍返回最近一个 key
+    this.previewKey.set(track.id, key ?? 0);
   }
 
   /** 当前正在试听的音高，用于高亮琴键 */
   private previewKey = new Map<string, number>();
+  /** 多键同时试听：每轨道一个 Set */
+  private previewKeys = new Map<string, Set<number>>();
   getPreviewKey(trackId: string) { return this.previewKey.get(trackId); }
 
   /** 鼓件试听：part 名为鼓件名 */

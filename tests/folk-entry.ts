@@ -13,10 +13,14 @@ import {
   PLUCK_DEFAULTS, BOW_DEFAULTS, WIND_DEFAULTS, YANGLE_DEFAULTS,
   preparePluck,
 } from '../src/audio/folk';
+// 诊断"FM 缺 noteOff"需要直接构造 FMSynth —— 主应用不导出它，
+// 只能从这里暴露给测试脚本。
+import { FMSynth } from '../src/audio/synth';
 
 const api = {
   PluckSynth, BowSynth, WindSynth, YangleSynth,
   PLUCK_DEFAULTS, BOW_DEFAULTS, WIND_DEFAULTS, YANGLE_DEFAULTS,
+  FMSynth,
   // 离线路径必须显式 await，测试里也一样 —— 不传 preparePluck
   // 的话 AudioWorklet 还没加载完，AudioWorkletNode 会直接抛异常
   preparePluck,

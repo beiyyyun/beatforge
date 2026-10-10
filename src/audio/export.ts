@@ -189,8 +189,6 @@ async function renderProject(
 }
 
 export interface RenderOptions {
-  /** 导出多少小节（含尾奏） */
-  bars?: number;
   /** 尾部延音秒数 */
   tailSeconds?: number;
   sampleRate?: number;
@@ -202,7 +200,6 @@ export async function exportWav(
   project: Project,
   opts: RenderOptions = {},
 ): Promise<Blob> {
-  const bars = opts.bars ?? Math.round(project.totalSteps / project.gridSteps);
   const tail = opts.tailSeconds ?? 3;
   const sampleRate = opts.sampleRate ?? 44100;
 

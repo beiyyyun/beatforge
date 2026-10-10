@@ -151,7 +151,12 @@ class PolyVoice {
     for (const osc of this.oscs) {
       try { osc.stop(end + 0.02); } catch { /* 已停止 */ }
     }
-    setTimeout(() => this.cleanup(), (end + 0.2) * 1000);
+    // setTimeout 的延迟必须是"从现在起到目标时刻的剩余时间"，
+    // 不是 AudioContext 时间轴上的绝对值。
+    // 原写法 (end + 0.2) * 1000 把 end（含未来 time 的绝对时刻）
+    // 当成相对延迟，导致 cleanup 比实际晚 time 秒执行。
+    const delayMs = Math.max(0, (end - this.ctx.currentTime + 0.2) * 1000);
+    setTimeout(() => this.cleanup(), delayMs);
   }
 
   cleanup() {
@@ -234,14 +239,18 @@ export class PolySynth implements InstrumentEngine {
 /** FM 合成器：载波 + 调制器，2 算子结构 */
 export class FMSynth implements InstrumentEngine {
   readonly type = 'fm';
-  private active: Array<{ stop: (t: number) => void }> = [];
+  private active: Array<{ noteId: string; stop: (t: number) => void }> = [];
 
   constructor(private ctx: BaseAudioContext, private dest: AudioNode) {}
 
-  noteOn(key: number, time: number, velocity: number, params: AnyParams) {
+  noteOn(key: number, time: number, velocity: number, params: AnyParams, noteId?: string) {
     const p = params as FMSynthParams;
     const freq = midiToFreq(key);
     const vel = Math.max(0.02, velocity);
+    // noteId 必须存下来：engine.ts 的 releaseNote 靠它精确释放单个声部。
+    // 不存的话 noteOff 找不到对应声部，只能 fallback 到 releaseAll
+    // 把所有重叠的 FM 声部一起掐断（和弦场景必现）。
+    const id = noteId ?? `fm${this.active.length}_${key}`;
 
     const out = this.ctx.createGain();
     const flt = this.ctx.createBiquadFilter();
@@ -297,6 +306,7 @@ export class FMSynth implements InstrumentEngine {
     mod.start(time);
 
     const handle = {
+      noteId: id,
       stop: (t: number) => {
         const e = p.env;
         ampEnv.gain.cancelScheduledValues(t);
@@ -313,6 +323,15 @@ export class FMSynth implements InstrumentEngine {
       },
     };
     this.active.push(handle);
+  }
+
+  /** 按 noteId 精确释放单个声部。不重叠的音符互不干扰 */
+  noteOff(noteId: string, time: number) {
+    const idx = this.active.findIndex((h) => h.noteId === noteId);
+    if (idx >= 0) {
+      this.active[idx].stop(time);
+      this.active.splice(idx, 1);
+    }
   }
 
   releaseAll(time: number, _params?: AnyParams) {

@@ -321,11 +321,13 @@ class BowVoice {
     key: number,
     vel: number,
     private p: BowParams,
+    startTime: number,
   ) {
     const freq = hz(key);
-    const t = ctx.currentTime;
-    const out = ctx.createGain();
-    out.gain.value = p.level * vel;
+    // 起音时刻必须用排程传入的 time，不能用 ctx.currentTime。
+    // 离线路径下 currentTime 恒为 0，所有音符会挤在 t=0 齐响；
+    // 实时路径下 currentTime ≈ time - lookahead，音符会提前 0.1s 出声。
+    const t = startTime;
 
     // ---- 琴筒共鸣：带通滤波器模拟胡琴筒的共振 ----
     const body = ctx.createBiquadFilter();
@@ -393,21 +395,19 @@ class BowVoice {
     }
 
     body.connect(tone);
-    tone.connect(out);
 
     // ---- 包络 ----
-    // 包络放在 out 之前，这样 out 只是静态音量，包络调制它。
-    // 早先版本把 out.disconnect() 再重连，结果把 out 到 dest 的连接
-    // 断开后又在 connect 顺序上出错，且 disconnect() 不带参数会切断
-    // 该节点的所有下游连接 —— 这类"顺手写"的代码是隐蔽 bug 的来源。
+    // 链路：tone → env（包络：attack→sustain→release）→ tail（静态音量）→ dest。
+    //
+    // 早先版本这里还有一个 out 节点接在 tone 之后，但从未 connect 到 dest，
+    // 是一条悬空死路径 —— 信号进了 out 就终止了。声音实际走下面这条链。
+    // 包络必须在静态音量之前，否则包络的 0.0001 起点会被 tail 的增益放大。
     this.env = ctx.createGain();
     const tail = ctx.createGain();
     tail.gain.value = p.level * vel;
     tone.connect(this.env);
     this.env.connect(tail);
     tail.connect(dest);
-    // out 保留给外部（本类内部不再使用），避免未使用变量
-    void out;
 
     this.env.gain.setValueAtTime(0.0001, t);
     this.env.gain.exponentialRampToValueAtTime(1, t + clamp(p.attack, 0.005, 2));
@@ -439,13 +439,13 @@ export class BowSynth implements InstrumentEngine {
 
   constructor(private ctx: BaseAudioContext, private dest: AudioNode) {}
 
-  noteOn(key: number, _time: number, velocity: number, params: AnyParams, noteId = ''): void {
+  noteOn(key: number, time: number, velocity: number, params: AnyParams, noteId = ''): void {
     const p = { ...BOW_DEFAULTS, ...(params as Partial<BowParams>) };
     this.cfg = p;
     const id = noteId || `bow${key}_${this.voices.size}`;
     // 同 id 重复触发先松开旧的，避免叠音
     this.voices.get(id)?.release(this.ctx.currentTime);
-    this.voices.set(id, new BowVoice(this.ctx, this.dest, key, Math.max(0.02, velocity), p));
+    this.voices.set(id, new BowVoice(this.ctx, this.dest, key, Math.max(0.02, velocity), p, time));
   }
 
   noteOff(noteId: string, time: number): void {
@@ -524,9 +524,11 @@ class WindVoice {
     key: number,
     vel: number,
     private p: WindParams,
+    startTime: number,
   ) {
     const freq = hz(key) * Math.pow(2, p.detune / 1200);
-    const t = ctx.currentTime;
+    // 同 BowVoice：必须用排程传入的 time，不能用 ctx.currentTime。
+    const t = startTime;
 
     const main = ctx.createGain();
     main.gain.value = p.tone;
@@ -647,12 +649,12 @@ export class WindSynth implements InstrumentEngine {
 
   constructor(private ctx: BaseAudioContext, private dest: AudioNode) {}
 
-  noteOn(key: number, _time: number, velocity: number, params: AnyParams, noteId = ''): void {
+  noteOn(key: number, time: number, velocity: number, params: AnyParams, noteId = ''): void {
     const p = { ...WIND_DEFAULTS, ...(params as Partial<WindParams>) };
     this.cfg = p;
     const id = noteId || `wind${key}_${this.voices.size}`;
     this.voices.get(id)?.release(this.ctx.currentTime);
-    this.voices.set(id, new WindVoice(this.ctx, this.dest, key, Math.max(0.02, velocity), p));
+    this.voices.set(id, new WindVoice(this.ctx, this.dest, key, Math.max(0.02, velocity), p, time));
   }
 
   noteOff(noteId: string, time: number): void {

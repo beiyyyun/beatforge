@@ -83,7 +83,7 @@ export function makeTrack(presetId: string): Track {
 }
 
 /** 生成空的鼓步进行（每件鼓一段） */
-export function makeStepRow(totalSteps: number, layout?: string[], enabledParts = 4): StepRow {
+export function makeStepRow(totalSteps: number, layout?: string[]): StepRow {
   const parts = layout ?? DEFAULT_DRUM_LAYOUT;
   const steps = new Array(parts.length * totalSteps).fill(0);
   return { steps, layout: parts, length: totalSteps };
@@ -97,7 +97,7 @@ export function emptyProject(): Project {
 
   const totalSteps = 64;
   const steps: Record<string, StepRow> = {
-    [drum.id]: makeStepRow(totalSteps, undefined, 4),
+    [drum.id]: makeStepRow(totalSteps),
   };
 
   return {
@@ -354,7 +354,7 @@ export class Store {
         }
         if (t.kind === 'drum') {
           if (!parsed.steps[t.id]) {
-            parsed.steps[t.id] = makeStepRow(total, DEFAULT_DRUM_LAYOUT, 4);
+            parsed.steps[t.id] = makeStepRow(total, DEFAULT_DRUM_LAYOUT);
           } else if (!parsed.steps[t.id].layout) {
             // 兼容旧版单段结构：自动扩展为分段
             const old = parsed.steps[t.id];
